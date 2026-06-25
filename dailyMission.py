@@ -28,6 +28,8 @@ from functools import partial
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 from openai import OpenAI
+from urllib.parse import urljoin
+import random
 
 username = None
 password = None
@@ -40,6 +42,18 @@ FALLBACK_MODEL_NAMES = [
     DEFAULT_MODEL_NAME,
     "Qwen/Qwen2.5-7B-Instruct",
     "THUDM/glm-4-9b-chat",
+]
+FAN_MESSAGES = [
+    "今天也要好好听歌，祝你开心。",
+    "愿你今天有首好歌陪着。",
+    "打卡路过，祝你今天顺顺利利。",
+    "今天也一起喜欢陈奕迅。",
+    "愿音乐和好心情都在你身边。",
+    "路过留一句，祝你今日愉快。",
+    "听歌愉快，生活也要闪闪发光。",
+    "今天也要保持热爱呀。",
+    "祝你今天拥有好天气和好歌单。",
+    "歌迷路过，送上一点好心情。",
 ]
 
 def login(driver):
@@ -409,6 +423,102 @@ def getMoney(driver):
     except Exception as e:
         print(f"获取金钱失败。")
         return 0
+
+def extract_friend_links(driver):
+    driver.get("https://www.easonfans.com/forum/home.php?mod=space&do=friend")
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
+    except Exception as e:
+        print(f"好友列表加载失败: {e}")
+        return []
+
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    friends = []
+    seen_uids = set()
+    for link in soup.find_all('a', href=True):
+        href = link['href']
+        uid_match = re.search(r'(?:uid=|space-uid-)(\d+)', href)
+        if not uid_match:
+            continue
+        uid = uid_match.group(1)
+        if uid in seen_uids:
+            continue
+        name = link.get_text(strip=True)
+        if not name:
+            continue
+        seen_uids.add(uid)
+        friends.append({
+            "uid": uid,
+            "name": name,
+            "url": urljoin(driver.current_url, href),
+        })
+    return friends
+
+def leave_wall_message(driver, friend, message):
+    wall_urls = [
+        f"https://www.easonfans.com/forum/home.php?mod=space&uid={friend['uid']}&do=wall",
+        friend["url"],
+    ]
+    for wall_url in wall_urls:
+        driver.get(wall_url)
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except Exception:
+            continue
+
+        textareas = driver.find_elements(By.TAG_NAME, "textarea")
+        inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='text']")
+        message_box = next((item for item in textareas + inputs if item.is_displayed() and item.is_enabled()), None)
+        if not message_box:
+            continue
+
+        message_box.clear()
+        message_box.send_keys(message)
+
+        submit_buttons = driver.find_elements(
+            By.XPATH,
+            "//button[@type='submit' or contains(., '留言') or contains(., '提交') or contains(., '发表')]"
+        )
+        submit_buttons += driver.find_elements(
+            By.XPATH,
+            "//input[@type='submit' or @type='button']"
+        )
+        submit_button = next((item for item in submit_buttons if item.is_displayed() and item.is_enabled()), None)
+        if not submit_button:
+            continue
+
+        submit_button.click()
+        sleep(random.randint(3, 7))
+        print(f"已给好友 {friend['name']} 留言: {message}")
+        return True
+
+    print(f"未找到好友 {friend['name']} 的留言入口，已跳过。")
+    return False
+
+def leave_friend_messages(driver, limit=7):
+    try:
+        friends = extract_friend_links(driver)
+        if not friends:
+            print("未找到好友，跳过好友留言。")
+            return
+
+        random.shuffle(friends)
+        sent_count = 0
+        for friend in friends:
+            if sent_count >= limit:
+                break
+            message = random.choice(FAN_MESSAGES)
+            if leave_wall_message(driver, friend, message):
+                sent_count += 1
+                sleep(random.randint(5, 15))
+
+        print(f"好友留言完成，本次成功留言 {sent_count} 人。")
+    except Exception as e:
+        print(f"好友留言过程中出现错误: {e}")
     
 def sendEmail(msg):
     sender = receiver = mail_user
@@ -490,6 +600,7 @@ def merge(headless: bool, local: bool, chromedriver_path: str):
     signin(driver)
     question(driver)
     lottery(driver)
+    leave_friend_messages(driver)
     final_money = getMoney(driver)
     print(f"金钱变化：{initial_money} -> {final_money}。")
     driver.quit()
