@@ -53,13 +53,3 @@ jobs:
       run: |
         python dailyMission.py --headless
 
-    - name: dailyMission for USER2
-      env:
-        USERNAME: ${{ secrets.USERNAME1 }}
-        PASSWORD: ${{ secrets.PASSWORD1 }}
-        MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
-        MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
-        API_KEY: ${{ secrets.API_KEY }}
-        MODEL_NAME: ${{ secrets.MODEL_NAME }}
-      run: |
-        python dailyMission.py --headless
