@@ -35,6 +35,12 @@ mail_user = None
 mail_pass = None
 api_key = None
 model_name = None
+DEFAULT_MODEL_NAME = "Qwen/Qwen3-8B"
+FALLBACK_MODEL_NAMES = [
+    DEFAULT_MODEL_NAME,
+    "Qwen/Qwen2.5-7B-Instruct",
+    "THUDM/glm-4-9b-chat",
+]
 
 def login(driver):
     try:
@@ -292,24 +298,39 @@ def get_answer_from_api(prompt):
     client = OpenAI(api_key=api_key, base_url=base_url)
     valid_options = ['a1', 'a2', 'a3', 'a4']
 
-    try:
-        response = client.chat.completions.create(
-            model=model_name or "Pro/zai-org/GLM-4.7",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "你是一个中文选择题答题助手。请根据题目和选项判断正确答案，"
-                        "只能输出 a1、a2、a3、a4 其中一个标签，不要输出任何解释。"
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0,
-            max_tokens=4,
-        )
-    except Exception as e:
-        print(f"API 调用失败（{type(e).__name__}）: {e}")
+    candidate_models = []
+    if model_name:
+        candidate_models.append(model_name)
+    candidate_models.extend(FALLBACK_MODEL_NAMES)
+    candidate_models = list(dict.fromkeys(candidate_models))
+
+    response = None
+    last_error = None
+    for candidate_model in candidate_models:
+        try:
+            response = client.chat.completions.create(
+                model=candidate_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是一个中文选择题答题助手。请根据题目和选项判断正确答案，"
+                            "只能输出 a1、a2、a3、a4 其中一个标签，不要输出任何解释。"
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0,
+                max_tokens=4,
+            )
+            print(f"API 使用模型: {candidate_model}")
+            break
+        except Exception as e:
+            last_error = e
+            print(f"模型 {candidate_model} 调用失败（{type(e).__name__}），尝试下一个模型。")
+
+    if response is None:
+        print(f"API 调用失败: {last_error}")
         return None
 
     raw_text = None
@@ -491,7 +512,7 @@ def main():
             mail_user = config['MAIL_USERNAME']
             mail_pass = config['MAIL_PASSWORD']
             api_key = config['API_KEY']
-            model_name = config.get('MODEL_NAME', 'Pro/zai-org/GLM-4.7')
+            model_name = config.get('MODEL_NAME', DEFAULT_MODEL_NAME)
         else:
             chromedriver_path = shutil.which("chromedriver")
             username = os.environ['USERNAME']
@@ -499,7 +520,7 @@ def main():
             mail_user = os.environ['MAIL_USERNAME']
             mail_pass = os.environ['MAIL_PASSWORD']
             api_key = os.environ['API_KEY']
-            model_name = os.environ.get('MODEL_NAME', 'Pro/zai-org/GLM-4.7')
+            model_name = os.environ.get('MODEL_NAME', DEFAULT_MODEL_NAME)
     except KeyError as e:
         raise Exception(f"Missing required configuration: {e}")
 
