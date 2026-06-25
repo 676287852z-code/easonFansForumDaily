@@ -507,7 +507,7 @@ def leave_wall_message(driver, friend, message):
             continue
 
         driver.execute_script("arguments[0].click();", submit_button)
-        sleep(random.randint(3, 7))
+        sleep(random.randint(10, 15))
         print(f"已给好友 {friend['name']} 留言: {message}")
         return True
 
@@ -529,7 +529,7 @@ def leave_friend_messages(driver, limit=7):
             message = random.choice(FAN_MESSAGES)
             if leave_wall_message(driver, friend, message):
                 sent_count += 1
-                sleep(random.randint(5, 15))
+                sleep(random.randint(10, 20))
 
         print(f"好友留言完成，本次成功留言 {sent_count} 人。")
     except Exception as e:
