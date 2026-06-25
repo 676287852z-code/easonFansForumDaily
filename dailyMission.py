@@ -275,7 +275,7 @@ def build_prompt(driver):
     prompt = f"题目：{full_text}\n\n选项：\n"
     for label, text in options:
         prompt += f"{label}. {text}\n"
-    prompt += "\n请从上述选项中选择一个最合理的答案，并只返回选项标签。"
+    prompt += "\n请认真判断题目和四个选项，只能从 a1、a2、a3、a4 中选择一个最可能正确的答案。只返回选项标签，不要解释。"
 
     return prompt
 
@@ -294,16 +294,19 @@ def get_answer_from_api(prompt):
 
     try:
         response = client.chat.completions.create(
-            model=model_name or "Qwen/Qwen2.5-7B-Instruct",
+            model=model_name or "Pro/zai-org/GLM-4.7",
             messages=[
                 {
                     "role": "system",
-                    "content": "你只需要从 a1、a2、a3、a4 中选择一个最合理的答案，并且只输出选项标签。",
+                    "content": (
+                        "你是一个中文选择题答题助手。请根据题目和选项判断正确答案，"
+                        "只能输出 a1、a2、a3、a4 其中一个标签，不要输出任何解释。"
+                    ),
                 },
                 {"role": "user", "content": prompt},
             ],
             temperature=0,
-            max_tokens=8,
+            max_tokens=4,
         )
     except Exception as e:
         print(f"API 调用失败（{type(e).__name__}）: {e}")
@@ -488,7 +491,7 @@ def main():
             mail_user = config['MAIL_USERNAME']
             mail_pass = config['MAIL_PASSWORD']
             api_key = config['API_KEY']
-            model_name = config.get('MODEL_NAME', 'Qwen/Qwen2.5-7B-Instruct')
+            model_name = config.get('MODEL_NAME', 'Pro/zai-org/GLM-4.7')
         else:
             chromedriver_path = shutil.which("chromedriver")
             username = os.environ['USERNAME']
@@ -496,7 +499,7 @@ def main():
             mail_user = os.environ['MAIL_USERNAME']
             mail_pass = os.environ['MAIL_PASSWORD']
             api_key = os.environ['API_KEY']
-            model_name = os.environ.get('MODEL_NAME', 'Qwen/Qwen2.5-7B-Instruct')
+            model_name = os.environ.get('MODEL_NAME', 'Pro/zai-org/GLM-4.7')
     except KeyError as e:
         raise Exception(f"Missing required configuration: {e}")
 
