@@ -425,40 +425,47 @@ def getMoney(driver):
         return 0
 
 def extract_friend_links(driver):
-    driver.get("https://www.easonfans.com/forum/home.php?mod=space&do=friend")
-    try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
-        )
-    except Exception as e:
-        print(f"好友列表加载失败: {e}")
-        return []
-
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
     friends = []
     seen_uids = set()
-    for link in soup.find_all('a', href=True):
-        href = link['href']
-        uid_match = re.search(r'(?:uid=|space-uid-)(\d+)', href)
-        if not uid_match:
+    friend_list_urls = [
+        "https://www.easonfans.com/forum/home.php?mod=space&do=friend",
+        "https://www.easonfans.com/forum/home.php?mod=space&do=friend&view=me",
+        "https://www.easonfans.com/forum/home.php?mod=space&do=friend&view=all",
+    ]
+    for friend_list_url in friend_list_urls:
+        driver.get(friend_list_url)
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except Exception as e:
+            print(f"好友列表加载失败: {friend_list_url} - {e}")
             continue
-        uid = uid_match.group(1)
-        if uid in seen_uids:
-            continue
-        name = link.get_text(strip=True)
-        if not name:
-            continue
-        seen_uids.add(uid)
-        friends.append({
-            "uid": uid,
-            "name": name,
-            "url": urljoin(driver.current_url, href),
-        })
+
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            uid_match = re.search(r'(?:uid=|space-uid-)(\d+)', href)
+            if not uid_match:
+                continue
+            uid = uid_match.group(1)
+            if uid in seen_uids:
+                continue
+            name = link.get_text(strip=True) or f"UID {uid}"
+            seen_uids.add(uid)
+            friends.append({
+                "uid": uid,
+                "name": name,
+                "url": urljoin(driver.current_url, href),
+            })
+
+    print(f"好友列表提取到 {len(friends)} 个候选好友。")
     return friends
 
 def leave_wall_message(driver, friend, message):
     wall_urls = [
         f"https://www.easonfans.com/forum/home.php?mod=space&uid={friend['uid']}&do=wall",
+        f"https://www.easonfans.com/forum/home.php?mod=space&uid={friend['uid']}&do=wall&view=me",
         friend["url"],
     ]
     for wall_url in wall_urls:
@@ -470,10 +477,17 @@ def leave_wall_message(driver, friend, message):
         except Exception:
             continue
 
-        textareas = driver.find_elements(By.TAG_NAME, "textarea")
-        inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='text']")
+        textareas = driver.find_elements(
+            By.CSS_SELECTOR,
+            "textarea, textarea[name='message'], textarea#message, textarea[name='comments']"
+        )
+        inputs = driver.find_elements(
+            By.CSS_SELECTOR,
+            "input[type='text'], input[name='message'], input#message"
+        )
         message_box = next((item for item in textareas + inputs if item.is_displayed() and item.is_enabled()), None)
         if not message_box:
+            print(f"好友 {friend['name']} 页面未找到可用留言框: {wall_url}")
             continue
 
         message_box.clear()
@@ -481,17 +495,18 @@ def leave_wall_message(driver, friend, message):
 
         submit_buttons = driver.find_elements(
             By.XPATH,
-            "//button[@type='submit' or contains(., '留言') or contains(., '提交') or contains(., '发表')]"
+            "//button[@type='submit' or @id='commentsubmit_btn' or @name='commentsubmit' or contains(., '留言') or contains(., '提交') or contains(., '发表')]"
         )
         submit_buttons += driver.find_elements(
             By.XPATH,
-            "//input[@type='submit' or @type='button']"
+            "//input[@type='submit' or @type='button' or @id='commentsubmit_btn' or @name='commentsubmit']"
         )
         submit_button = next((item for item in submit_buttons if item.is_displayed() and item.is_enabled()), None)
         if not submit_button:
+            print(f"好友 {friend['name']} 页面未找到提交按钮: {wall_url}")
             continue
 
-        submit_button.click()
+        driver.execute_script("arguments[0].click();", submit_button)
         sleep(random.randint(3, 7))
         print(f"已给好友 {friend['name']} 留言: {message}")
         return True
