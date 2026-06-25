@@ -34,6 +34,7 @@ password = None
 mail_user = None
 mail_pass = None
 api_key = None
+model_name = None
 
 def login(driver):
     try:
@@ -283,24 +284,38 @@ def get_answer_from_api(prompt):
     global _api_call_count
     _api_call_count += 1
 
-    app_id = 'a28c65816de34018acb4dc1a3c19dbab'
-    base_url = f'https://dashscope.aliyuncs.com/api/v2/apps/agent/{app_id}/compatible-mode/v1/'
+    if not api_key or api_key == "0":
+        print("API_KEY 未配置，使用备选选项。")
+        return None
+
+    base_url = 'https://api.siliconflow.cn/v1'
     client = OpenAI(api_key=api_key, base_url=base_url)
     valid_options = ['a1', 'a2', 'a3', 'a4']
 
     try:
-        response = client.responses.create(input=prompt)
+        response = client.chat.completions.create(
+            model=model_name or "Qwen/Qwen2.5-7B-Instruct",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你只需要从 a1、a2、a3、a4 中选择一个最合理的答案，并且只输出选项标签。",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0,
+            max_tokens=8,
+        )
     except Exception as e:
         print(f"API 调用失败（{type(e).__name__}）: {e}")
         return None
 
     raw_text = None
-    if hasattr(response, 'output') and hasattr(response.output, 'text'):
+    if hasattr(response, 'choices') and response.choices:
+        raw_text = getattr(response.choices[0].message, 'content', None) or getattr(response.choices[0], 'content', None)
+    elif hasattr(response, 'output') and hasattr(response.output, 'text'):
         raw_text = response.output.text
     elif hasattr(response, 'output_text'):
         raw_text = response.output_text
-    elif hasattr(response, 'choices') and response.choices:
-        raw_text = getattr(response.choices[0].message, 'content', None) or getattr(response.choices[0], 'content', None)
     if not raw_text:
         print("API 未返回有效内容")
         return None
@@ -444,7 +459,7 @@ def merge(headless: bool, local: bool, chromedriver_path: str):
     driver.quit()
 
 def main():
-    global username, password, mail_user, mail_pass, api_key
+    global username, password, mail_user, mail_pass, api_key, model_name
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--local', action='store_true', help='Use local config and chromedriver path')
@@ -473,6 +488,7 @@ def main():
             mail_user = config['MAIL_USERNAME']
             mail_pass = config['MAIL_PASSWORD']
             api_key = config['API_KEY']
+            model_name = config.get('MODEL_NAME', 'Qwen/Qwen2.5-7B-Instruct')
         else:
             chromedriver_path = shutil.which("chromedriver")
             username = os.environ['USERNAME']
@@ -480,6 +496,7 @@ def main():
             mail_user = os.environ['MAIL_USERNAME']
             mail_pass = os.environ['MAIL_PASSWORD']
             api_key = os.environ['API_KEY']
+            model_name = os.environ.get('MODEL_NAME', 'Qwen/Qwen2.5-7B-Instruct')
     except KeyError as e:
         raise Exception(f"Missing required configuration: {e}")
 

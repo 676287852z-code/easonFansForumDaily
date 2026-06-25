@@ -8,7 +8,8 @@
 fork本repositroy后，在Settings->Secrets中新建仓库密码（New repository secret）。
 - 添加Name为`USERNAME`和`PASSWORD`的环境变量，分别添加自己神经研究所的账号和密码。
 - 添加Name为`MAIL_USERNAME`和`MAIL_PASSWORD`的环境变量，分别添加自己邮箱的SMTP账号和密码。
-- 如需使用LLM回答问题需要在[阿里百炼平台](https://bailian.console.aliyun.com)申请apikey并添加`API_KEY`的环境变量，否则随机选择。
+- 如需使用LLM回答问题，需要在[硅基流动](https://cloud.siliconflow.cn/)申请 API Key，并添加`API_KEY`的环境变量，否则随机选择。
+- 可选添加`MODEL_NAME`环境变量指定硅基流动模型，不设置时默认使用`Qwen/Qwen2.5-7B-Instruct`。
 - `API_KEY`如果不需要也建议设置为0。
 ![tutorial1](img/tutorial1.png "tutorial1")
 ![tutorial2](img/tutorial2.png "tutorial2")
@@ -39,7 +40,8 @@ fork本repositroy后，在Settings->Secrets中新建仓库密码（New repositor
         "PASSWORD": "",
         "MAIL_USERNAME": "",
         "MAIL_PASSWORD": "",
-        "API_KEY":""
+        "API_KEY":"",
+        "MODEL_NAME":"Qwen/Qwen2.5-7B-Instruct"
     }
     ```
 3. 在[网站](https://googlechromelabs.github.io/chrome-for-testing/#stable)下载与自己chrome版本相符合的chrome driver，并将文件夹解压后放到当前目录
