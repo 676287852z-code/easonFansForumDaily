@@ -238,17 +238,38 @@ def question(driver):
 
 def answer_question(driver, question_number, option_index=0):
     """答一题：调用一次 get_answer_from_api，失败时用 DEFAULT_OPTIONS[default_option_index] 作为答案。"""
-    prompt = build_prompt(driver)
+    prompt, prompt_options = build_prompt(driver)
     label = get_answer_from_api(prompt)
-    options = ['a1', 'a2', 'a3', 'a4']
+    option_labels = ['a1', 'a2', 'a3', 'a4']
     if label is None:
-        label = options[option_index % len(options)]
+        label = option_labels[option_index % len(option_labels)]
         print(f"API 返回异常，使用备选选项（第 {option_index + 1} 次）: {label}")
+    selected_text = dict(prompt_options).get(label)
+    if selected_text:
+        current_options = extract_question_options(driver)
+        current_label = next((item_label for item_label, text in current_options if text == selected_text), None)
+        if current_label:
+            label = current_label
+        else:
+            print("未能在当前页面匹配到原选项文字，继续使用原选项标签。")
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, label))).click()
     WebDriverWait(driver, 10).until(
         EC.element_to_be_clickable((By.XPATH, "//button[@name='submit'][@value='true']"))
     ).click()
     print(f"回答第 {question_number + 1} 题成功")
+
+def extract_question_options(driver):
+    html = driver.page_source
+    soup = BeautifulSoup(html, 'html.parser')
+    options = []
+    option_divs = soup.find_all('div', class_='qs_option')
+    for div in option_divs:
+        input_tag = div.find('input')
+        label = input_tag.get('id') if input_tag else 'unknown'
+        raw_text = div.get_text(strip=True).replace('\xa0', ' ')
+        text = raw_text.split(' ', 1)[-1] if ' ' in raw_text else raw_text
+        options.append((label, text))
+    return options
 
 def build_prompt(driver):
     # 获取页面 HTML 内容
@@ -266,16 +287,7 @@ def build_prompt(driver):
     full_text = full_text.replace('【题目】', '').replace('\xa0', ' ').strip()
 
     # 2. 提取选项内容（ID 和 文本）
-    options = []
-    option_divs = soup.find_all('div', class_='qs_option')
-    for div in option_divs:
-        input_tag = div.find('input')
-        label = input_tag.get('id') if input_tag else 'unknown'
-        # 取整段文本，剔除 &nbsp;&nbsp; 或空格
-        raw_text = div.get_text(strip=True).replace('\xa0', ' ')
-        # 去掉可能的前缀（如 “a1. ”）
-        text = raw_text.split(' ', 1)[-1] if ' ' in raw_text else raw_text
-        options.append((label, text))
+    options = extract_question_options(driver)
 
     # 3. 构建 prompt
     prompt = f"题目：{full_text}\n\n选项：\n"
@@ -283,7 +295,7 @@ def build_prompt(driver):
         prompt += f"{label}. {text}\n"
     prompt += "\n请认真判断题目和四个选项，只能从 a1、a2、a3、a4 中选择一个最可能正确的答案。只返回选项标签，不要解释。"
 
-    return prompt
+    return prompt, options
 
 def get_answer_from_api(prompt):
     """单次调用 API，成功返回 a1-a4，失败返回 None。"""
