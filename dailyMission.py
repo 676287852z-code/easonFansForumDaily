@@ -120,22 +120,45 @@ def signin(driver):
             # 打开徽章领取页面
             driver.get("https://www.easonfans.com/forum/plugin.php?id=badge_7ree:badge_7ree&code=1")
 
-            
-            button = driver.find_element("css selector", 'a[href*="plugin.php?id=badge_7ree"]')
-            before_click_content = driver.page_source  # 记录点击前页面内容
-            button.click()  # 点击领取按钮
-            WebDriverWait(driver, 5).until(
-                EC.staleness_of(badge_element)  # 等待元素失效（通常意味着页面刷新）
+            buttons = WebDriverWait(driver, 10).until(
+                lambda current_driver: current_driver.find_elements(
+                    By.CSS_SELECTOR, 'a[href*="plugin.php?id=badge_7ree"]'
+                )
             )
-            after_click_content = driver.page_source  # 记录点击后页面内容
+            button = next(
+                (candidate for candidate in buttons if candidate.is_displayed() and candidate.is_enabled()),
+                buttons[-1],
+            )
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center'});",
+                button,
+            )
+            sleep(1)
+
+            before_click_content = driver.page_source
+            try:
+                button.click()
+            except Exception:
+                print("徽章按钮普通点击失败，使用备用点击方式。")
+                driver.execute_script("arguments[0].click();", button)
+
+            try:
+                WebDriverWait(driver, 5).until(
+                    lambda current_driver: current_driver.page_source != before_click_content
+                )
+            except TimeoutException:
+                pass
+            after_click_content = driver.page_source
 
             if before_click_content != after_click_content:
                 print("徽章领取成功！")
             else:
-                print("徽章领取失败。")
+                print("未确认徽章领取结果，继续执行每日任务。")
 
     except TimeoutException:
         print("没有徽章弹窗。")
+    except Exception as error:
+        print(f"徽章领取出现错误（{type(error).__name__}），已跳过并继续执行每日任务。")
     
     # 导航到签到页面
     driver.get("https://www.easonfans.com/forum/plugin.php?id=dsu_paulsign:sign")
