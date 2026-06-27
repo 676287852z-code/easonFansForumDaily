@@ -53,3 +53,11 @@ jobs:
       run: |
         python dailyMission.py --headless
 
+    - name: Upload quiz results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: quiz-results
+        path: quiz_results.jsonl
+        if-no-files-found: ignore
+

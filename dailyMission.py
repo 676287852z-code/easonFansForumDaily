@@ -43,6 +43,8 @@ FALLBACK_MODEL_NAMES = [
     "Qwen/Qwen2.5-7B-Instruct",
     "THUDM/glm-4-9b-chat",
 ]
+QUIZ_LOG_PATH = os.environ.get("QUIZ_LOG_PATH", "quiz_results.jsonl")
+_last_answer_model = None
 FAN_MESSAGES = [
     "今天也要好好听歌，祝你开心。",
     "愿你今天有首好歌陪着。",
@@ -171,11 +173,27 @@ def signin(driver):
             print(f"签到过程中出现错误。")
 
 
+def extract_quiz_stats(page_source):
+    answered_match = re.search(r"累计答题:\s*(\d+)", page_source)
+    correct_match = re.search(r"累计答对:\s*(\d+)", page_source)
+    answered = int(answered_match.group(1)) if answered_match else None
+    correct = int(correct_match.group(1)) if correct_match else None
+    return answered, correct
+
+
+def append_quiz_record(record):
+    with open(QUIZ_LOG_PATH, "a", encoding="utf-8") as log_file:
+        log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def question(driver):
     base_url = "https://www.easonfans.com/forum/plugin.php?id=ahome_dayquestion:index"
     global _api_call_count
     _api_call_count = 0
     MAX_API_CALLS = 3  # 单次运行最大 API 调用次数
+
+    with open(QUIZ_LOG_PATH, "w", encoding="utf-8"):
+        pass
 
     driver.get(base_url)
     try:
@@ -253,11 +271,19 @@ def question(driver):
 def answer_question(driver, question_number, option_index=0):
     """答一题：调用一次 get_answer_from_api，失败时用 DEFAULT_OPTIONS[default_option_index] 作为答案。"""
     prompt, prompt_options = build_prompt(driver)
+    question_text = prompt.split("\n\n选项：", 1)[0].replace("题目：", "", 1).strip()
+    before_answered, before_correct = extract_quiz_stats(driver.page_source)
+
+    print(f"[答题] 第 {question_number + 1} 题：{question_text}")
+    for option_label, option_text in prompt_options:
+        print(f"[答题] {option_label}: {option_text}")
+
     label = get_answer_from_api(prompt)
     option_labels = ['a1', 'a2', 'a3', 'a4']
     if label is None:
         label = option_labels[option_index % len(option_labels)]
         print(f"API 返回异常，使用备选选项（第 {option_index + 1} 次）: {label}")
+    model_label = label
     selected_text = dict(prompt_options).get(label)
     if selected_text:
         current_options = extract_question_options(driver)
@@ -266,11 +292,57 @@ def answer_question(driver, question_number, option_index=0):
             label = current_label
         else:
             print("未能在当前页面匹配到原选项文字，继续使用原选项标签。")
+    clicked_text = dict(extract_question_options(driver)).get(label, selected_text)
+    print(
+        f"[答题] 模型={_last_answer_model or 'fallback'}，"
+        f"模型选择={model_label}，实际点击={label}: {clicked_text or '未知'}"
+    )
+
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, label))).click()
     WebDriverWait(driver, 10).until(
         EC.element_to_be_clickable((By.XPATH, "//button[@name='submit'][@value='true']"))
     ).click()
-    print(f"回答第 {question_number + 1} 题成功")
+
+    try:
+        WebDriverWait(driver, 10).until(
+            lambda d: extract_quiz_stats(d.page_source)[0] not in (None, before_answered)
+        )
+    except TimeoutException:
+        sleep(2)
+
+    after_answered, after_correct = extract_quiz_stats(driver.page_source)
+    if (
+        before_correct is not None
+        and after_correct is not None
+        and after_correct > before_correct
+    ):
+        result = "正确"
+    elif (
+        before_answered is not None
+        and after_answered is not None
+        and after_answered > before_answered
+    ):
+        result = "错误"
+    else:
+        result = "未知"
+
+    record = {
+        "time": datetime.now(timezone(timedelta(hours=8))).isoformat(),
+        "question_number": question_number + 1,
+        "question": question_text,
+        "options": dict(prompt_options),
+        "model": _last_answer_model or "fallback",
+        "model_choice": model_label,
+        "clicked_label": label,
+        "clicked_text": clicked_text,
+        "result": result,
+        "answered_before": before_answered,
+        "answered_after": after_answered,
+        "correct_before": before_correct,
+        "correct_after": after_correct,
+    }
+    append_quiz_record(record)
+    print(f"[答题] 第 {question_number + 1} 题结果：{result}")
 
 def extract_question_options(driver):
     html = driver.page_source
@@ -313,8 +385,9 @@ def build_prompt(driver):
 
 def get_answer_from_api(prompt):
     """单次调用 API，成功返回 a1-a4，失败返回 None。"""
-    global _api_call_count
+    global _api_call_count, _last_answer_model
     _api_call_count += 1
+    _last_answer_model = None
 
     if not api_key or api_key == "0":
         print("API_KEY 未配置，使用备选选项。")
@@ -349,6 +422,7 @@ def get_answer_from_api(prompt):
                 temperature=0,
                 max_tokens=4,
             )
+            _last_answer_model = candidate_model
             print(f"API 使用模型: {candidate_model}")
             break
         except Exception as e:
@@ -665,7 +739,7 @@ def main():
     # merge(headless=args.headless, local=args.local, chromedriver_path=chromedriver_path)
     merge_fn = partial(merge, headless=args.headless, local=args.local, chromedriver_path=chromedriver_path)
     # local 模式下 tee=True：print 实时显示在控制台，同时写入缓冲区用于发邮件
-    output_message = capture_output(merge_fn, tee=args.local)
+    output_message = capture_output(merge_fn, tee=True)
     sendEmail(output_message)
 
 if __name__ == '__main__':
