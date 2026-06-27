@@ -6,13 +6,6 @@ name: Python application
 on:
   workflow_dispatch:
 
-  push:
-    branches: [ main ]
-
-  schedule:
-    - cron: '17 16 * * *'
-    # - cron: '*/1 * * * *'
-
 permissions:
   contents: read
 
