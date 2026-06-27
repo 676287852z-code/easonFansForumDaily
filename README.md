@@ -7,6 +7,7 @@
 ## 使用方法
 fork本repositroy后，在Settings->Secrets中新建仓库密码（New repository secret）。
 - 添加Name为`USERNAME`和`PASSWORD`的环境变量，分别添加自己神经研究所的账号和密码。
+- 如需运行第二个账号，再添加`USERNAME2`和`PASSWORD2`。两个账号会依次运行，并分别保存答题记录。
 - 添加Name为`MAIL_USERNAME`和`MAIL_PASSWORD`的环境变量，分别添加自己邮箱的SMTP账号和密码。
 - 如需使用LLM回答问题，需要在[硅基流动](https://cloud.siliconflow.cn/)申请 API Key，并添加`API_KEY`的环境变量，否则随机选择。
 - 可选添加`MODEL_NAME`环境变量指定硅基流动模型，不设置时默认使用`deepseek-ai/DeepSeek-V3.2`；每道题会先联网搜索相关资料，再交给模型判断。如果搜索或指定模型不可用，脚本会自动尝试备用方案。

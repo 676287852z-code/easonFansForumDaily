@@ -42,7 +42,7 @@ jobs:
     - name: Prepare chromedriver
       uses: nanasess/setup-chromedriver@v2
 
-    - name: dailyMission
+    - name: Daily mission - account 1
       env:
         USERNAME: ${{ secrets.USERNAME }}
         PASSWORD: ${{ secrets.PASSWORD }}
@@ -50,7 +50,25 @@ jobs:
         MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
         API_KEY: ${{ secrets.API_KEY }}
         MODEL_NAME: ${{ secrets.MODEL_NAME }}
+        QUIZ_LOG_PATH: quiz-results-account-1.jsonl
       run: |
+        python dailyMission.py --headless
+
+    - name: Daily mission - account 2
+      if: always()
+      env:
+        USERNAME: ${{ secrets.USERNAME2 }}
+        PASSWORD: ${{ secrets.PASSWORD2 }}
+        MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+        MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+        API_KEY: ${{ secrets.API_KEY }}
+        MODEL_NAME: ${{ secrets.MODEL_NAME }}
+        QUIZ_LOG_PATH: quiz-results-account-2.jsonl
+      run: |
+        if [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
+          echo "Account 2 secrets are missing; skipping account 2."
+          exit 0
+        fi
         python dailyMission.py --headless
 
     - name: Upload quiz results
@@ -58,6 +76,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: quiz-results
-        path: quiz_results.jsonl
+        path: quiz-results-account-*.jsonl
         if-no-files-found: ignore
 
