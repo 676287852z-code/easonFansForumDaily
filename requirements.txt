@@ -2,4 +2,5 @@ selenium
 pytesseract
 beautifulsoup4
 dashscope
+ddgs
 openai
