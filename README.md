@@ -9,8 +9,8 @@ fork本repositroy后，在Settings->Secrets中新建仓库密码（New repositor
 - 添加Name为`USERNAME`和`PASSWORD`的环境变量，分别添加自己神经研究所的账号和密码。
 - 如需运行第二个账号，再添加`USERNAME2`和`PASSWORD2`。两个账号会依次运行，并分别保存答题记录。
 - 添加Name为`MAIL_USERNAME`和`MAIL_PASSWORD`的环境变量，分别添加自己邮箱的SMTP账号和密码。
-- 如需使用LLM回答问题，需要在[硅基流动](https://cloud.siliconflow.cn/)申请 API Key，并添加`API_KEY`的环境变量，否则随机选择。
-- 可选添加`MODEL_NAME`环境变量指定硅基流动模型，不设置时默认使用`deepseek-ai/DeepSeek-V3.2`；每道题会先联网搜索相关资料，再交给模型判断。如果搜索或指定模型不可用，脚本会自动尝试备用方案。
+- 如需使用LLM回答问题，需要在[火山方舟](https://console.volcengine.com/ark/region:ark+cn-beijing/apikey)申请 API Key，并添加`API_KEY`环境变量；否则脚本会使用备用选项。
+- 可选添加`MODEL_NAME`环境变量指定火山方舟模型 ID，不设置时默认使用`doubao-seed-2-1-pro-260628`。脚本通过方舟 Responses API 启用豆包助手内置 AI 搜索，不使用 Web Search 联网内容插件；如果指定模型不可用，会自动尝试备用豆包模型。
 - `API_KEY`如果不需要也建议设置为0。
 ![tutorial1](img/tutorial1.png "tutorial1")
 ![tutorial2](img/tutorial2.png "tutorial2")
@@ -42,7 +42,7 @@ fork本repositroy后，在Settings->Secrets中新建仓库密码（New repositor
         "MAIL_USERNAME": "",
         "MAIL_PASSWORD": "",
         "API_KEY":"",
-        "MODEL_NAME":"deepseek-ai/DeepSeek-V3.2"
+        "MODEL_NAME":"doubao-seed-2-1-pro-260628"
     }
     ```
 3. 在[网站](https://googlechromelabs.github.io/chrome-for-testing/#stable)下载与自己chrome版本相符合的chrome driver，并将文件夹解压后放到当前目录

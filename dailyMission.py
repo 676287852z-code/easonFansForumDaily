@@ -27,7 +27,6 @@ import sys
 from functools import partial
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
-from ddgs import DDGS  # 保留但不再使用（可选择删除）
 from openai import OpenAI
 from urllib.parse import urljoin
 import random
@@ -40,10 +39,11 @@ api_key = None
 model_name = None
 
 # ---------- 修改点 1：默认模型和备选模型改为豆包 ----------
-DEFAULT_MODEL_NAME = "doubao-seed-2-1-pro-260628"  # 支持联网搜索的模型
+DEFAULT_MODEL_NAME = "doubao-seed-2-1-pro-260628"
 FALLBACK_MODEL_NAMES = [
     "doubao-seed-2-1-pro-260628",
-    "doubao-pro-32k",
+    "doubao-seed-2-0-pro-260215",
+    "doubao-seed-2-0-lite-260215",
 ]
 
 QUIZ_LOG_PATH = os.environ.get("QUIZ_LOG_PATH", "quiz_results.jsonl")
@@ -161,8 +161,6 @@ def append_quiz_record(record):
     with open(QUIZ_LOG_PATH, "a", encoding="utf-8") as log_file:
         log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-# ---------- 删除原有的 search_question_context 函数，不再需要 ----------
-
 def question(driver):
     base_url = "https://www.easonfans.com/forum/plugin.php?id=ahome_dayquestion:index"
     global _api_call_count
@@ -243,7 +241,7 @@ def question(driver):
             continue
 
 def answer_question(driver, question_number, option_index=0):
-    """答一题：调用豆包 API（自带联网搜索）"""
+    """答一题：调用豆包 API，并启用豆包助手内置 AI 搜索。"""
     prompt, prompt_options = build_prompt(driver)
     question_text = prompt.split("\n\n选项：", 1)[0].replace("题目：", "", 1).strip()
     before_answered, before_correct = extract_quiz_stats(driver.page_source)
@@ -351,7 +349,7 @@ def build_prompt(driver):
 
 # ---------- 修改点 3：核心 API 函数改为豆包 ----------
 def get_answer_from_api(prompt, search_results=None):
-    """调用豆包 API（自带联网搜索），返回 a1-a4 或 None"""
+    """调用豆包 API，通过豆包助手内置 AI 搜索返回 a1-a4 或 None。"""
     global _api_call_count, _last_answer_model
     _api_call_count += 1
     _last_answer_model = None
@@ -360,7 +358,6 @@ def get_answer_from_api(prompt, search_results=None):
         print("API_KEY 未配置，使用备选选项。")
         return None
 
-    # 豆包 API 地址（从你的 curl 示例获取）
     base_url = 'https://ark.cn-beijing.volces.com/api/v3'
     client = OpenAI(api_key=api_key, base_url=base_url)
     valid_options = ['a1', 'a2', 'a3', 'a4']
@@ -380,26 +377,38 @@ def get_answer_from_api(prompt, search_results=None):
 
     for candidate_model in candidate_models:
         try:
-            response = client.chat.completions.create(
+            response = client.responses.create(
                 model=candidate_model,
-                messages=[
+                input=[
                     {
                         "role": "system",
                         "content": (
-                            "你是一个中文选择题答题助手。这是陈奕迅粉丝网站神经研究所每日单选题，联网搜索论坛题库、歌词、专辑资料，只输出正确选项，不要多余解释"
+                            "你是一个中文选择题答题助手。这是陈奕迅粉丝网站神经研究所每日单选题。"
+                            "请联网搜索论坛题库、歌词、专辑资料后判断正确答案。"
                             "你可以使用联网搜索功能获取最新信息来辅助判断。"
                             "只能输出 a1、a2、a3、a4 其中一个标签，不要输出任何解释。"
                         ),
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0,
-                max_tokens=32,
-                enable_web_search=True,          # 关键：开启联网搜索
-                # reasoning_effort="high",       # 可选，根据模型支持
+                tools=[
+                    {
+                        "type": "doubao_app",
+                        "feature": {
+                            "ai_search": {
+                                "type": "enabled",
+                                "role_description": (
+                                    "你是陈奕迅资料检索助手，优先搜索可靠的论坛题库、"
+                                    "歌词、专辑和演出资料。"
+                                ),
+                            }
+                        },
+                    }
+                ],
+                extra_headers={"ark-beta-doubao-app": "true"},
             )
             _last_answer_model = candidate_model
-            print(f"API 使用模型: {candidate_model} (联网搜索已启用)")
+            print(f"API 使用模型: {candidate_model} (豆包助手 AI 搜索已启用)")
             break
         except Exception as e:
             last_error = e
@@ -409,14 +418,15 @@ def get_answer_from_api(prompt, search_results=None):
         print(f"API 调用失败: {last_error}")
         return None
 
-    # 解析响应（保持不变）
-    raw_text = None
-    if hasattr(response, 'choices') and response.choices:
-        raw_text = getattr(response.choices[0].message, 'content', None) or getattr(response.choices[0], 'content', None)
-    elif hasattr(response, 'output') and hasattr(response.output, 'text'):
-        raw_text = response.output.text
-    elif hasattr(response, 'output_text'):
-        raw_text = response.output_text
+    raw_text = getattr(response, "output_text", None)
+    if not raw_text:
+        output_texts = []
+        for output_item in getattr(response, "output", []) or []:
+            for content_item in getattr(output_item, "content", []) or []:
+                text = getattr(content_item, "text", None)
+                if text:
+                    output_texts.append(text)
+        raw_text = "\n".join(output_texts)
     if not raw_text:
         print("API 未返回有效内容")
         return None

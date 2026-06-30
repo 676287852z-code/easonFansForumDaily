@@ -2,5 +2,4 @@ selenium
 pytesseract
 beautifulsoup4
 dashscope
-ddgs
-openai
+openai>=1.66.0,<3
