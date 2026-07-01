@@ -47,6 +47,7 @@ FALLBACK_MODEL_NAMES = [
 ]
 
 QUIZ_LOG_PATH = os.environ.get("QUIZ_LOG_PATH", "quiz_results.jsonl")
+API_RETRY_DELAY_SECONDS = int(os.environ.get("API_RETRY_DELAY_SECONDS", "600"))
 _last_answer_model = None
 FAN_MESSAGES = [
     "今天也要好好听歌，祝你开心。",
@@ -163,9 +164,6 @@ def append_quiz_record(record):
 
 def question(driver):
     base_url = "https://www.easonfans.com/forum/plugin.php?id=ahome_dayquestion:index"
-    global _api_call_count
-    _api_call_count = 0
-    MAX_API_CALLS = 3
 
     with open(QUIZ_LOG_PATH, "w", encoding="utf-8"):
         pass
@@ -189,7 +187,6 @@ def question(driver):
         initial_answer = 0
         initial_correct = 0
 
-    previous_participated = -1
     while True:
         driver.get(base_url)
         try:
@@ -202,9 +199,6 @@ def question(driver):
 
         matches = re.search(r"\((\d+)/(\d+)\)", participated_element.text)
         participated, total = map(int, matches.groups())
-        if previous_participated >= 0 and participated == previous_participated + 1:
-            _api_call_count = 0
-        previous_participated = participated
 
         if participated >= total:
             try:
@@ -226,21 +220,23 @@ def question(driver):
                 print(f"今日答题已完成。总正确数/答题数：{final_correct}/{final_answer}。")
             break
         
-        if _api_call_count >= MAX_API_CALLS:
-            print(f"单次运行 API 调用已达 {MAX_API_CALLS} 次，跳过后续答题")
-            break
-        
         try:
             WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//button[@name='submit'][@value='true']"))
             )
-            answer_question(driver, participated, _api_call_count)
+            if not answer_question(driver, participated):
+                print(
+                    f"API 暂时不可用，本题不会提交。"
+                    f"{API_RETRY_DELAY_SECONDS // 60} 分钟后重新尝试。"
+                )
+                sleep(API_RETRY_DELAY_SECONDS)
+                continue
         except Exception as e:
             print(f"答题第{participated+1}题过程中出现错误，正在重试。")
             sleep(5)
             continue
 
-def answer_question(driver, question_number, option_index=0):
+def answer_question(driver, question_number):
     """答一题：调用豆包 API，并启用豆包助手内置 AI 搜索。"""
     prompt, prompt_options = build_prompt(driver)
     question_text = prompt.split("\n\n选项：", 1)[0].replace("题目：", "", 1).strip()
@@ -250,13 +246,10 @@ def answer_question(driver, question_number, option_index=0):
     for option_label, option_text in prompt_options:
         print(f"[答题] {option_label}: {option_text}")
 
-    # ---------- 修改点 2：不再手动搜索，直接调用 API ----------
-    # search_results = search_question_context(question_text, prompt_options)  # 已删除
-    label = get_answer_from_api(prompt)   # 模型自带联网搜索
-    option_labels = ['a1', 'a2', 'a3', 'a4']
+    label = get_answer_from_api(prompt)
     if label is None:
-        label = option_labels[option_index % len(option_labels)]
-        print(f"API 返回异常，使用备选选项（第 {option_index + 1} 次）: {label}")
+        print("API 未返回有效答案，保留当前题目且不提交。")
+        return False
     model_label = label
     selected_text = dict(prompt_options).get(label)
     if selected_text:
@@ -319,6 +312,7 @@ def answer_question(driver, question_number, option_index=0):
     }
     append_quiz_record(record)
     print(f"[答题] 第 {question_number + 1} 题结果：{result}")
+    return True
 
 def extract_question_options(driver):
     html = driver.page_source
@@ -350,16 +344,20 @@ def build_prompt(driver):
 # ---------- 修改点 3：核心 API 函数改为豆包 ----------
 def get_answer_from_api(prompt, search_results=None):
     """调用豆包 API，通过豆包助手内置 AI 搜索返回 a1-a4 或 None。"""
-    global _api_call_count, _last_answer_model
-    _api_call_count += 1
+    global _last_answer_model
     _last_answer_model = None
 
     if not api_key or api_key == "0":
-        print("API_KEY 未配置，使用备选选项。")
+        print("API_KEY 未配置，本题不会提交。")
         return None
 
     base_url = 'https://ark.cn-beijing.volces.com/api/v3'
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=60,
+        max_retries=1,
+    )
     valid_options = ['a1', 'a2', 'a3', 'a4']
 
     # 候选模型：优先使用用户指定的，否则使用默认支持联网的模型
